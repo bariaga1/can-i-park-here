@@ -1,0 +1,162 @@
+import { StatusBar } from 'expo-status-bar';
+import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useRef, useState } from 'react';
+import { runOcrOnUri } from './src/ocr';
+import { evaluateRulesFromText } from './src/parser';
+import type { Verdict } from './src/types';
+
+export default function App() {
+  const cameraRef = useRef<CameraView | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+
+  if (!permission) {
+    return (
+      <View style={styles.center}>
+        <Text>Checking camera permissions…</Text>
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.center}>
+        <Text>We need your permission to show the camera</Text>
+        <TouchableOpacity style={styles.button} onPress={requestPermission}>
+          <Text style={styles.buttonText}>Grant permission</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const takePhoto = async () => {
+    try {
+      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8, skipProcessing: true });
+      if (photo?.uri) {
+        setPhotoUri(photo.uri);
+        const ocr = await runOcrOnUri(photo.uri);
+        const result = evaluateRulesFromText(ocr.text);
+        setVerdict(result);
+      }
+    } catch (error) {
+      setVerdict({ status: 'uncertain', reason: 'Failed to capture photo' });
+    }
+  };
+
+  const reset = () => {
+    setPhotoUri(null);
+    setVerdict(null);
+  };
+
+  return (
+    <View style={styles.container}>
+      {!photoUri ? (
+        <View style={styles.cameraContainer}>
+          <CameraView ref={cameraRef} style={styles.camera} facing="back">
+            <View style={styles.captureBar}>
+              <TouchableOpacity style={styles.shutter} onPress={takePhoto} />
+            </View>
+          </CameraView>
+        </View>
+      ) : (
+        <View style={styles.previewContainer}>
+          <Image source={{ uri: photoUri }} style={styles.preview} />
+          {verdict && (
+            <View style={[styles.verdictBadge, verdict.status === 'ok' ? styles.ok : verdict.status === 'not_ok' ? styles.notOk : styles.uncertain]}>
+              <Text style={styles.verdictText}>
+                {verdict.status === 'ok' ? 'OK to Park' : verdict.status === 'not_ok' ? 'Do NOT Park' : 'Uncertain'}
+              </Text>
+            </View>
+          )}
+          {verdict && <Text style={styles.reason}>{verdict.reason}</Text>}
+          {verdict?.nextSafeStartLocal && (
+            <Text style={styles.next}>Next safe: {verdict.nextSafeStartLocal}</Text>
+          )}
+          <TouchableOpacity style={styles.button} onPress={reset}>
+            <Text style={styles.buttonText}>Scan another sign</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      <StatusBar style="auto" />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  camera: {
+    flex: 1,
+  },
+  captureBar: {
+    position: 'absolute',
+    bottom: 36,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shutter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#fff',
+    opacity: 0.9,
+  },
+  previewContainer: {
+    flex: 1,
+    padding: 16,
+    gap: 12,
+  },
+  preview: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: 12,
+  },
+  verdictBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  ok: { backgroundColor: '#16a34a' },
+  notOk: { backgroundColor: '#dc2626' },
+  uncertain: { backgroundColor: '#f59e0b' },
+  verdictText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  reason: {
+    color: '#111827',
+  },
+  next: {
+    color: '#374151',
+  },
+  button: {
+    marginTop: 'auto',
+    backgroundColor: '#111827',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+});
