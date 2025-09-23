@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { runOcrOnUri } from './src/ocr';
 import { evaluateRulesFromText } from './src/parser';
 import type { Verdict } from './src/types';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function App() {
   const cameraRef = useRef<CameraView | null>(null);
@@ -50,6 +51,19 @@ export default function App() {
     setVerdict(null);
   };
 
+  const importFromPhotos = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      const uri = result.assets[0].uri;
+      setPhotoUri(uri);
+      const ocr = await runOcrOnUri(uri);
+      const res = evaluateRulesFromText(ocr.text || '');
+      setVerdict(res);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {!photoUri ? (
@@ -74,9 +88,14 @@ export default function App() {
           {verdict?.nextSafeStartLocal && (
             <Text style={styles.next}>Next safe: {verdict.nextSafeStartLocal}</Text>
           )}
-          <TouchableOpacity style={styles.button} onPress={reset}>
-            <Text style={styles.buttonText}>Scan another sign</Text>
-          </TouchableOpacity>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity style={[styles.button, styles.secondary]} onPress={importFromPhotos}>
+              <Text style={styles.buttonText}>Import from Photos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.button} onPress={reset}>
+              <Text style={styles.buttonText}>Scan another sign</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
       <StatusBar style="auto" />
@@ -155,8 +174,16 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
+  secondary: {
+    backgroundColor: '#4b5563',
+  },
   buttonText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  actionsRow: {
+    marginTop: 'auto',
+    flexDirection: 'row',
+    gap: 12,
   },
 });

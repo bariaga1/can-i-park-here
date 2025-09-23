@@ -12,10 +12,14 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "extra": {
+      "OCRSPACE_API_KEY": "K85332068388957"
+    },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "This app uses the camera to scan parking signs."
+        "NSCameraUsageDescription": "This app uses the camera to scan parking signs.",
+        "NSPhotoLibraryUsageDescription": "This app imports photos of street signs to analyze."
       }
     },
     "android": {
@@ -26,7 +30,9 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
