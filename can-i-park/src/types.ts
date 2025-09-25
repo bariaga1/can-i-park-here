@@ -12,3 +12,14 @@ export type OcrResult = {
   confidence?: number;
 };
 
+export type ParsedRule = {
+  type: string;
+  days?: string[];
+  startTime?: string;
+  endTime?: string;
+  exceptions?: string[];
+  permitRequired?: boolean;
+  direction?: string;
+  rawText: string;
+};
+

@@ -77,6 +77,83 @@ export function evaluateRulesFromText(text: string): Verdict {
     return { status: 'ok', reason: 'No cleaning right now' };
   }
 
+  // PERMIT ZONES - confusing because they often have exceptions
+  // "PERMIT REQUIRED EXCEPT SUNDAYS" or "RESIDENT PERMIT ONLY"
+  const permitRequired = normalized.match(/PERMIT REQUIRED(?: EXCEPT ([A-Z\s,]+))?/);
+  if (permitRequired) {
+    const exceptions = permitRequired[1];
+    if (exceptions && exceptions.includes(day)) {
+      return { status: 'ok', reason: `Permit required but today (${day}) is excepted` };
+    }
+    return { status: 'not_ok', reason: 'Permit required - check if you have valid permit' };
+  }
+
+  // RESIDENT PERMIT ONLY
+  const residentOnly = normalized.match(/RESIDENT PERMIT ONLY/);
+  if (residentOnly) {
+    return { status: 'not_ok', reason: 'Resident permit only - check if you qualify' };
+  }
+
+  // COMPLEX: Multiple rules on same sign
+  // "NO PARKING MON-FRI 8AM-6PM EXCEPT PERMIT HOLDERS"
+  const complexNoParking = normalized.match(/NO PARKING ([A-Z\s,-]+) (\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*-\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))(?: EXCEPT ([A-Z\s]+))?/);
+  if (complexNoParking) {
+    const daysPart = complexNoParking[1];
+    const start = to24h(complexNoParking[2]);
+    const end = to24h(complexNoParking[3]);
+    const exception = complexNoParking[4];
+    const days = DAYS.filter(dy => new RegExp(`\\b${dy}\\b`).test(daysPart.replace(/&/g, ' ')));
+    const isToday = days.includes(day);
+    const within = hour >= start && hour <= end;
+    
+    if (isToday && within) {
+      if (exception && exception.includes('PERMIT')) {
+        return { status: 'uncertain', reason: `No parking ${complexNoParking[2]}–${complexNoParking[3]} except permit holders - check your permit` };
+      }
+      return { status: 'not_ok', reason: `No parking ${complexNoParking[2]}–${complexNoParking[3]}`, nextSafeStartLocal: humanizeNext(date, end) };
+    }
+    return { status: 'ok', reason: 'Outside restricted hours' };
+  }
+
+  // LOADING ZONE - often confusing
+  const loadingZone = normalized.match(/LOADING ZONE(?: (\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*-\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM)))?/);
+  if (loadingZone) {
+    if (loadingZone[1] && loadingZone[2]) {
+      const start = to24h(loadingZone[1]);
+      const end = to24h(loadingZone[2]);
+      const within = hour >= start && hour <= end;
+      if (within) {
+        return { status: 'not_ok', reason: `Loading zone active ${loadingZone[1]}–${loadingZone[2]} - commercial vehicles only` };
+      }
+    }
+    return { status: 'not_ok', reason: 'Loading zone - commercial vehicles only' };
+  }
+
+  // TOW AWAY ZONE - scary but important
+  const towAway = normalized.match(/TOW AWAY ZONE(?: ([A-Z\s,]+))?/);
+  if (towAway) {
+    const daysPart = towAway[1];
+    if (daysPart) {
+      const days = DAYS.filter(dy => new RegExp(`\\b${dy}\\b`).test(daysPart.replace(/&/g, ' ')));
+      if (days.includes(day)) {
+        return { status: 'not_ok', reason: `Tow away zone active today (${day}) - DO NOT PARK` };
+      }
+    }
+    return { status: 'not_ok', reason: 'Tow away zone - DO NOT PARK' };
+  }
+
+  // HANDICAP/ACCESSIBLE PARKING
+  const handicap = normalized.match(/HANDICAP|ACCESSIBLE|DISABLED/);
+  if (handicap) {
+    return { status: 'not_ok', reason: 'Handicap/accessible parking only - valid permit required' };
+  }
+
+  // FIRE ZONE/HYDRANT
+  const fireZone = normalized.match(/FIRE ZONE|FIRE HYDRANT|NO PARKING.*FIRE/);
+  if (fireZone) {
+    return { status: 'not_ok', reason: 'Fire zone/hydrant - DO NOT PARK' };
+  }
+
   return { status: 'uncertain', reason: 'Could not parse rules from sign text' };
 }
 

@@ -12,6 +12,7 @@ export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [debugInfo, setDebugInfo] = useState<{ ocrText: string; confidence: number } | null>(null);
 
   if (!permission) {
     return (
@@ -38,6 +39,7 @@ export default function App() {
       if (photo?.uri) {
         setPhotoUri(photo.uri);
         const ocr = await runOcrOnUri(photo.uri);
+        setDebugInfo({ ocrText: ocr.text, confidence: ocr.confidence || 0 });
         const result = evaluateRulesFromText(ocr.text);
         setVerdict(result);
       }
@@ -49,6 +51,7 @@ export default function App() {
   const reset = () => {
     setPhotoUri(null);
     setVerdict(null);
+    setDebugInfo(null);
   };
 
   const importFromPhotos = async () => {
@@ -59,6 +62,7 @@ export default function App() {
       const uri = result.assets[0].uri;
       setPhotoUri(uri);
       const ocr = await runOcrOnUri(uri);
+      setDebugInfo({ ocrText: ocr.text, confidence: ocr.confidence || 0 });
       const res = evaluateRulesFromText(ocr.text || '');
       setVerdict(res);
     }
@@ -87,6 +91,13 @@ export default function App() {
           {verdict && <Text style={styles.reason}>{verdict.reason}</Text>}
           {verdict?.nextSafeStartLocal && (
             <Text style={styles.next}>Next safe: {verdict.nextSafeStartLocal}</Text>
+          )}
+          {debugInfo && (
+            <View style={styles.debugContainer}>
+              <Text style={styles.debugTitle}>Debug Info:</Text>
+              <Text style={styles.debugText}>OCR Text: "{debugInfo.ocrText}"</Text>
+              <Text style={styles.debugText}>Confidence: {Math.round(debugInfo.confidence * 100)}%</Text>
+            </View>
           )}
           <View style={styles.actionsRow}>
             <TouchableOpacity style={[styles.button, styles.secondary]} onPress={importFromPhotos}>
@@ -185,5 +196,21 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     flexDirection: 'row',
     gap: 12,
+  },
+  debugContainer: {
+    backgroundColor: '#f3f4f6',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  debugTitle: {
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontFamily: 'monospace',
   },
 });
