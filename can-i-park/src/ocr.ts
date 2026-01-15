@@ -1,5 +1,5 @@
 import type { OcrResult } from './types';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import Constants from 'expo-constants';
 
 // Cloud OCR using OCR.space (simple free tier). Requires OCRSPACE_API_KEY in app.json extra or env.
@@ -12,7 +12,16 @@ export async function runOcrOnUri(uri: string): Promise<OcrResult> {
     }
 
     console.log('OCR: Starting OCR processing for image...');
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
+    // Use new File API - convert bytes to base64
+    const file = new File(uri);
+    const bytes = await file.bytes();
+    // Convert Uint8Array to base64 string
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
     const form = new FormData();
     form.append('apikey', apiKey as any);
     form.append('language', 'eng');
