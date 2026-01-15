@@ -35,15 +35,22 @@ export default function App() {
 
   const takePhoto = async () => {
     try {
+      console.log('App: Taking photo...');
       const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8, skipProcessing: true });
       if (photo?.uri) {
+        console.log('App: Photo captured, URI:', photo.uri);
         setPhotoUri(photo.uri);
+        console.log('App: Starting OCR...');
         const ocr = await runOcrOnUri(photo.uri);
+        console.log('App: OCR completed. Text:', ocr.text, 'Confidence:', ocr.confidence);
         setDebugInfo({ ocrText: ocr.text, confidence: ocr.confidence || 0 });
+        console.log('App: Evaluating rules from text:', ocr.text);
         const result = evaluateRulesFromText(ocr.text);
+        console.log('App: Parser result:', result);
         setVerdict(result);
       }
     } catch (error) {
+      console.error('App: Error in takePhoto:', error);
       setVerdict({ status: 'uncertain', reason: 'Failed to capture photo' });
     }
   };
@@ -60,10 +67,15 @@ export default function App() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
     if (!result.canceled && result.assets?.[0]?.uri) {
       const uri = result.assets[0].uri;
+      console.log('App: Image selected from photos, URI:', uri);
       setPhotoUri(uri);
+      console.log('App: Starting OCR...');
       const ocr = await runOcrOnUri(uri);
+      console.log('App: OCR completed. Text:', ocr.text, 'Confidence:', ocr.confidence);
       setDebugInfo({ ocrText: ocr.text, confidence: ocr.confidence || 0 });
+      console.log('App: Evaluating rules from text:', ocr.text || '');
       const res = evaluateRulesFromText(ocr.text || '');
+      console.log('App: Parser result:', res);
       setVerdict(res);
     }
   };
