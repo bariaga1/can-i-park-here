@@ -81,9 +81,119 @@ function nowContext() {
   };
 }
 
+// Filter out irrelevant text, keeping only parking-related content
+function filterParkingRelevantText(text: string): string {
+  const upper = text.toUpperCase();
+  
+  // Parking-related keywords to keep
+  const parkingKeywords = [
+    'PARKING', 'PARK', 'NO PARKING', 'NO PARK', 'STANDING', 'NO STANDING',
+    'STREET CLEANING', 'CLEANING', 'PERMIT', 'RESIDENT', 'LOADING ZONE',
+    'LOADING', 'TOW AWAY', 'TOW', 'FIRE ZONE', 'FIRE HYDRANT', 'FIRE',
+    'HANDICAP', 'ACCESSIBLE', 'DISABLED', 'METERED', 'HR', 'HOUR',
+    'EXCEPT', 'REQUIRED', 'ONLY', 'ZONE', 'PROHIBITED', 'FORBIDDEN', 'RESIDENT', 'RESIDENT ONLY', 'CAUTION', 'NO STOPPING'
+  ];
+  
+  // Day abbreviations pattern
+  const dayPattern = DAYS.join('|');
+  
+  // Time patterns (e.g., 9AM, 11:30PM, 8:00 AM)
+  const timePattern = /\d{1,2}(?::\d{2})?\s*(?:AM|PM)/gi;
+  
+  // Check if text contains any parking keywords
+  const hasParkingKeyword = parkingKeywords.some(keyword => upper.includes(keyword));
+  
+  if (!hasParkingKeyword) {
+    // No parking keywords found, return original
+    return text;
+  }
+  
+  // Extract relevant sections: look for patterns like "NO PARKING ..." or "STREET CLEANING ..."
+  const lines = upper.split(/\n|\r\n|\r/);
+  const relevantLines: string[] = [];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    
+    // Check if line contains parking keywords
+    const hasKeyword = parkingKeywords.some(keyword => trimmed.includes(keyword));
+    
+    // Check if line contains days or times (likely part of parking rule)
+    const hasDay = new RegExp(`\\b(${dayPattern})\\b`).test(trimmed);
+    const hasTime = timePattern.test(trimmed);
+    
+    if (hasKeyword || hasDay || hasTime) {
+      // Keep this line, but filter out non-relevant words
+      const words = trimmed.split(/\s+/);
+      const filteredWords: string[] = [];
+      
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        const prevWord = words[i - 1] || '';
+        const nextWord = words[i + 1] || '';
+        
+        // Keep parking keywords
+        const isKeyword = parkingKeywords.some(kw => word.includes(kw) || `${prevWord} ${word}`.includes(kw) || `${word} ${nextWord}`.includes(kw));
+        
+        // Keep day abbreviations
+        const isDay = new RegExp(`^${dayPattern}$`).test(word);
+        
+        // Keep time patterns
+        const isTime = timePattern.test(word) || timePattern.test(`${prevWord} ${word}`) || timePattern.test(`${word} ${nextWord}`);
+        
+        // Keep numbers (could be hour limits)
+        const isNumber = /^\d+$/.test(word);
+        const isHourLimit = isNumber && (nextWord.includes('HR') || nextWord.includes('HOUR'));
+        
+        // Keep connectors
+        const isConnector = /^[-–—&,]$/.test(word) || /^(AND|OR|TO|THRU|THROUGH|EXCEPT|ONLY|REQUIRED)$/i.test(word);
+        
+        if (isKeyword || isDay || isTime || isHourLimit || isConnector) {
+          filteredWords.push(word);
+        }
+      }
+      
+      if (filteredWords.length > 0) {
+        relevantLines.push(filteredWords.join(' '));
+      }
+    }
+  }
+  
+  // If we found relevant lines, join them; otherwise return original
+  if (relevantLines.length > 0) {
+    return relevantLines.join(' ');
+  }
+  
+  // Fallback: extract just the parking-related patterns from the whole text
+  const allWords = upper.split(/\s+/);
+  const relevantWords: string[] = [];
+  
+  for (let i = 0; i < allWords.length; i++) {
+    const word = allWords[i];
+    const context = `${allWords[i - 1] || ''} ${word} ${allWords[i + 1] || ''}`.trim();
+    
+    const isKeyword = parkingKeywords.some(kw => context.includes(kw));
+    const isDay = new RegExp(`^${dayPattern}$`).test(word);
+    const isTime = timePattern.test(context);
+    const isNumber = /^\d+$/.test(word);
+    const isHourLimit = isNumber && (allWords[i + 1]?.includes('HR') || allWords[i + 1]?.includes('HOUR'));
+    const isConnector = /^[-–—&,]$/.test(word) || /^(AND|OR|TO|THRU|THROUGH|EXCEPT|ONLY|REQUIRED)$/i.test(word);
+    
+    if (isKeyword || isDay || isTime || isHourLimit || isConnector) {
+      relevantWords.push(word);
+    }
+  }
+  
+  return relevantWords.length > 0 ? relevantWords.join(' ') : text;
+}
+
 export function evaluateRulesFromText(text: string): Verdict {
+  // First, filter out irrelevant text
+  const filteredText = filterParkingRelevantText(text);
+  
   // Better normalization for OCR: handle line breaks, extra spaces, common OCR errors
-  let normalized = text.toUpperCase()
+  let normalized = filteredText.toUpperCase()
     .replace(/\r\n/g, ' ')      // Windows line breaks
     .replace(/\n/g, ' ')        // Unix line breaks
     .replace(/\r/g, ' ')        // Mac line breaks
@@ -284,6 +394,123 @@ export function evaluateRulesFromText(text: string): Verdict {
   const fireZone = normalized.match(/FIRE\s*ZONE|FIRE\s*HYDRANT|NO\s*PARKING.*FIRE/i);
   if (fireZone) {
     return { status: 'not_ok', reason: 'Fire zone/hydrant - DO NOT PARK' };
+  }
+
+  // More flexible patterns - try variations before fallback
+  
+  // NO STANDING patterns (similar to NO PARKING)
+  const noStandingMatch = normalized.match(/NO\s*STANDING\s+(?:([A-Z\s,&\-]+?)\s+)?(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
+  if (noStandingMatch) {
+    const daysPart = noStandingMatch[1]?.trim() || '';
+    const startTimeStr = noStandingMatch[2].trim();
+    const endTimeStr = noStandingMatch[3].trim();
+    const start = to24h(startTimeStr);
+    const end = to24h(endTimeStr);
+    
+    if (!isNaN(start) && !isNaN(end)) {
+      if (daysPart) {
+        const days = parseDays(daysPart);
+        const isToday = days.length > 0 ? days.includes(day) : true;
+        const within = hour >= start && hour <= end;
+        if (isToday && within) {
+          return { status: 'not_ok', reason: `No standing ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
+        }
+        return { status: 'ok', reason: `Outside restricted hours (${startTimeStr}–${endTimeStr})` };
+      }
+      const within = hour >= start && hour <= end;
+      if (within) {
+        return { status: 'not_ok', reason: `No standing ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
+      }
+      return { status: 'ok', reason: `Outside restricted hours (${startTimeStr}–${endTimeStr})` };
+    }
+  }
+
+  // Pattern: <DAYS> <TIME>-<TIME> (without "NO PARKING" prefix)
+  const daysTimePattern = normalized.match(/((?:[A-Z]{3}[\s,&-]*)+)\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
+  if (daysTimePattern && normalized.includes('PARK')) {
+    const daysPart = daysTimePattern[1].trim();
+    const startTimeStr = daysTimePattern[2].trim();
+    const endTimeStr = daysTimePattern[3].trim();
+    const start = to24h(startTimeStr);
+    const end = to24h(endTimeStr);
+    
+    if (!isNaN(start) && !isNaN(end)) {
+      const days = parseDays(daysPart);
+      if (days.length > 0) {
+        const isToday = days.includes(day);
+        const within = hour >= start && hour <= end;
+        if (isToday && within) {
+          return { status: 'not_ok', reason: `Parking restriction ${days.join(', ')} ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
+        }
+        return { status: 'ok', reason: `No restriction today (${days.join(', ')} ${startTimeStr}–${endTimeStr})` };
+      }
+    }
+  }
+
+  // Pattern: PARKING PROHIBITED / FORBIDDEN
+  const parkingProhibited = normalized.match(/PARKING\s+(?:PROHIBITED|FORBIDDEN|NOT\s*ALLOWED)/i);
+  if (parkingProhibited) {
+    // Try to find time range nearby
+    const timeRange = normalized.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
+    if (timeRange) {
+      const start = to24h(timeRange[1].trim());
+      const end = to24h(timeRange[2].trim());
+      if (!isNaN(start) && !isNaN(end)) {
+        const within = hour >= start && hour <= end;
+        if (within) {
+          return { status: 'not_ok', reason: `Parking prohibited ${timeRange[1]}–${timeRange[2]}`, nextSafeStartLocal: humanizeNext(date, end) };
+        }
+        return { status: 'ok', reason: `Parking prohibited outside hours (${timeRange[1]}–${timeRange[2]})` };
+      }
+    }
+    return { status: 'not_ok', reason: 'Parking prohibited - check sign for time restrictions' };
+  }
+
+  // Pattern: METERED PARKING with time restrictions
+  const meteredParking = normalized.match(/METERED\s*PARKING.*?(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
+  if (meteredParking) {
+    const startTimeStr = meteredParking[1].trim();
+    const endTimeStr = meteredParking[2].trim();
+    const start = to24h(startTimeStr);
+    const end = to24h(endTimeStr);
+    if (!isNaN(start) && !isNaN(end)) {
+      const within = hour >= start && hour <= end;
+      if (within) {
+        return { status: 'ok', reason: `Metered parking active (${startTimeStr}–${endTimeStr}) - payment required`, nextSafeStartLocal: endTimeStr };
+      }
+      return { status: 'ok', reason: 'Outside metered hours' };
+    }
+  }
+
+  // Pattern: Time range with day abbreviations nearby (more flexible)
+  // Try to find any day + time pattern even if format is non-standard
+  const flexibleDayTime = normalized.match(/([A-Z]{3}(?:\s*[-&,]\s*[A-Z]{3})*)\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
+  if (flexibleDayTime && (normalized.includes('PARK') || normalized.includes('NO'))) {
+    const daysPart = flexibleDayTime[1].trim();
+    const startTimeStr = flexibleDayTime[2].trim();
+    const endTimeStr = flexibleDayTime[3].trim();
+    const start = to24h(startTimeStr);
+    const end = to24h(endTimeStr);
+    
+    if (!isNaN(start) && !isNaN(end)) {
+      const days = parseDays(daysPart);
+      if (days.length > 0) {
+        const isToday = days.includes(day);
+        const within = hour >= start && hour <= end;
+        const isNoParking = /NO.*PARK/i.test(normalized);
+        
+        if (isNoParking || normalized.includes('PROHIBITED') || normalized.includes('FORBIDDEN')) {
+          if (isToday && within) {
+            return { status: 'not_ok', reason: `No parking ${days.join(', ')} ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
+          }
+          return { status: 'ok', reason: `No restriction today (restriction applies ${days.join(', ')})` };
+        } else {
+          if (isToday && within) {
+            return { status: 'ok', reason: `Parking allowed ${days.join(', ')} ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: endTimeStr };
+          }
+        }
+      }
+    }
   }
 
   // FALLBACK: Try to extract any time range pattern even if format doesn't match exactly
