@@ -15,6 +15,7 @@ export default function App() {
   const [debugInfo, setDebugInfo] = useState<{ ocrText: string; confidence: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
 
   if (!permission) {
     return (
@@ -68,6 +69,11 @@ export default function App() {
     setDebugInfo(null);
     setShowDebug(false);
     setIsProcessing(false);
+    setShowCamera(false);
+  };
+
+  const startCamera = () => {
+    setShowCamera(true);
   };
 
   const importFromPhotos = async () => {
@@ -93,6 +99,36 @@ export default function App() {
     }
   };
 
+  // Show menu screen first
+  if (!showCamera && !photoUri) {
+    return (
+      <View style={styles.menuContainer}>
+        <View style={styles.menuHeader}>
+          <Text style={styles.menuTitle}>Can I Park Here?</Text>
+          <Text style={styles.menuSubtitle}>Scan parking signs to check if you can park there!</Text>
+        </View>
+        
+        <View style={styles.menuOptions}>
+          <TouchableOpacity style={styles.menuButton} onPress={startCamera}>
+            <View style={styles.menuButtonIcon}>
+              <Text style={styles.menuButtonEmoji}>📸</Text>
+            </View>
+            <Text style={styles.menuButtonTitle}>Take a Photo</Text>
+            <Text style={styles.menuButtonDescription}>Use your camera to scan a sign</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={[styles.menuButton, styles.menuButtonSecondary]} onPress={importFromPhotos}>
+            <View style={[styles.menuButtonIcon, { backgroundColor: '#4b5563' }]}>
+              <Text style={styles.menuButtonEmoji}>📷</Text>
+            </View>
+            <Text style={styles.menuButtonTitle}>Import Photo</Text>
+            <Text style={styles.menuButtonDescription}>Choose from your photo library</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {!photoUri ? (
@@ -100,6 +136,9 @@ export default function App() {
           <CameraView ref={cameraRef} style={styles.camera} facing="back">
             <View style={styles.headerOverlay}>
               <Text style={styles.headerTitle}>Can I Park Here?</Text>
+              <TouchableOpacity style={styles.backButton} onPress={() => setShowCamera(false)}>
+                <Text style={styles.backButtonText}>← Back</Text>
+              </TouchableOpacity>
             </View>
             <View style={styles.captureBar}>
               <View style={styles.bottomControls}>
@@ -210,6 +249,72 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     alignItems: 'center',
   },
+  menuContainer: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+    paddingTop: 80,
+    paddingHorizontal: 24,
+  },
+  menuHeader: {
+    alignItems: 'center',
+    marginBottom: 60,
+  },
+  menuTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 12,
+    letterSpacing: 0.5,
+  },
+  menuSubtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  menuOptions: {
+    gap: 20,
+  },
+  menuButton: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 2,
+    borderColor: '#111827',
+  },
+  menuButtonSecondary: {
+    borderColor: '#4b5563',
+    backgroundColor: '#f9fafb',
+  },
+  menuButtonIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  menuButtonEmoji: {
+    fontSize: 40,
+  },
+  menuButtonTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  menuButtonDescription: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
   headerOverlay: {
     position: 'absolute',
     top: 50,
@@ -219,7 +324,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     zIndex: 10,
+  },
+  backButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   headerTitle: {
     color: '#fff',

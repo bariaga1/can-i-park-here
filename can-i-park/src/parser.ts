@@ -89,9 +89,10 @@ function filterParkingRelevantText(text: string): string {
   const parkingKeywords = [
     'PARKING', 'PARK', 'NO PARKING', 'NO PARK', 'STANDING', 'NO STANDING',
     'STREET CLEANING', 'CLEANING', 'PERMIT', 'RESIDENT', 'LOADING ZONE',
-    'LOADING', 'TOW AWAY', 'TOW', 'FIRE ZONE', 'FIRE HYDRANT', 'FIRE',
+    'LOADING', 'TOW AWAY', 'TOW', 'TOWED', 'FIRE ZONE', 'FIRE HYDRANT', 'FIRE',
     'HANDICAP', 'ACCESSIBLE', 'DISABLED', 'METERED', 'HR', 'HOUR',
-    'EXCEPT', 'REQUIRED', 'ONLY', 'ZONE', 'PROHIBITED', 'FORBIDDEN', 'RESIDENT', 'RESIDENT ONLY', 'CAUTION', 'NO STOPPING'
+    'EXCEPT', 'REQUIRED', 'ONLY', 'ZONE', 'PROHIBITED', 'FORBIDDEN', 'RESIDENT', 'RESIDENT ONLY', 'CAUTION', 'NO STOPPING',
+    'PRIVATE', 'UNAUTHORIZED', 'UNAUTHORISED', 'VEHICLES', 'VEHICLE'
   ];
   
   // Day abbreviations pattern
@@ -396,6 +397,23 @@ export function evaluateRulesFromText(text: string): Verdict {
     return { status: 'not_ok', reason: 'Fire zone/hydrant - DO NOT PARK' };
   }
 
+  // PRIVATE PARKING - unauthorized vehicles will be towed
+  const privateParking = normalized.match(/PRIVATE\s*PARKING/i);
+  if (privateParking) {
+    const hasTow = /TOW|TOWED|TOW\s*AWAY/i.test(normalized);
+    const hasUnauthorized = /UNAUTHORIZED|UNAUTHORISED/i.test(normalized);
+    if (hasTow || hasUnauthorized) {
+      return { status: 'not_ok', reason: 'Private parking - unauthorized vehicles will be towed' };
+    }
+    return { status: 'not_ok', reason: 'Private parking - authorized vehicles only' };
+  }
+
+  // UNAUTHORIZED VEHICLES / TOWED AWAY patterns
+  const unauthorizedTow = normalized.match(/UNAUTHORIZED.*TOW|UNAUTHORIZED.*TOWED|UNAUTHORISED.*TOW/i);
+  if (unauthorizedTow) {
+    return { status: 'not_ok', reason: 'Unauthorized vehicles will be towed - DO NOT PARK' };
+  }
+
   // More flexible patterns - try variations before fallback
   
   // NO STANDING patterns (similar to NO PARKING)
@@ -527,21 +545,48 @@ export function evaluateRulesFromText(text: string): Verdict {
       // Check if any day abbreviation appears in the text
       const hasDays = DAYS.some(d => normalized.includes(d));
       
+      // Check for parking restriction keywords
+      const isNoParking = /(?:NO|NOT)\s*PARK|PARKING\s*(?:PROHIBITED|FORBIDDEN|NOT\s*ALLOWED)|DO\s*NOT\s*PARK/i.test(normalized);
+      const isStanding = /NO\s*STANDING/i.test(normalized);
+      const isRestriction = isNoParking || isStanding;
+      
       if (hasDays) {
         // Try to find which days
         const foundDays: string[] = [];
         DAYS.forEach(d => {
           if (normalized.includes(d)) foundDays.push(d);
         });
-        const isToday = foundDays.includes(day);
+        const days = parseDays(foundDays.join(' '));
+        const isToday = days.length > 0 ? days.includes(day) : foundDays.includes(day);
         
-        if (isToday && within) {
-          return { status: 'not_ok', reason: `Parking restriction active now (${startTimeStr}–${endTimeStr})`, nextSafeStartLocal: humanizeNext(date, end) };
+        if (isRestriction) {
+          if (isToday && within) {
+            return { status: 'not_ok', reason: `No parking ${foundDays.join(', ')} ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
+          }
+          if (isToday) {
+            return { status: 'ok', reason: `No restriction now (restriction applies ${foundDays.join(', ')} ${startTimeStr}–${endTimeStr})` };
+          }
+          return { status: 'ok', reason: `No restriction today (restriction applies ${foundDays.join(', ')})` };
+        } else {
+          // If it's not a restriction, it might be allowed parking
+          if (isToday && within) {
+            return { status: 'ok', reason: `Parking allowed ${foundDays.join(', ')} ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: endTimeStr };
+          }
         }
-      }
-      
-      if (within) {
-        return { status: 'uncertain', reason: `Time restriction active (${startTimeStr}–${endTimeStr}) - check sign for details`, nextSafeStartLocal: humanizeNext(date, end) };
+      } else {
+        // No days found, but we have a time range
+        // If it's a restriction keyword, assume it applies during the time range
+        if (isRestriction) {
+          if (within) {
+            return { status: 'not_ok', reason: `No parking ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
+          }
+          return { status: 'ok', reason: `Outside restricted hours (${startTimeStr}–${endTimeStr})` };
+        }
+        // If we have time but no restriction keywords, be cautious but still evaluate
+        if (within) {
+          return { status: 'not_ok', reason: `Time restriction active (${startTimeStr}–${endTimeStr}) - check sign for details`, nextSafeStartLocal: humanizeNext(date, end) };
+        }
+        return { status: 'ok', reason: `Outside time window (${startTimeStr}–${endTimeStr})` };
       }
     }
   }
@@ -549,7 +594,25 @@ export function evaluateRulesFromText(text: string): Verdict {
   // FALLBACK: Check if text contains parking-related keywords but format unclear
   const hasParkingKeywords = /(?:NO|NOT)\s*PARK|PARKING\s*(?:PROHIBITED|FORBIDDEN|NOT\s*ALLOWED)|DO\s*NOT\s*PARK/i.test(normalized);
   if (hasParkingKeywords) {
-    return { status: 'uncertain', reason: 'Sign indicates parking restriction but format could not be parsed - please review sign carefully' };
+    // Try to find any time information
+    const timeMatch = normalized.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/gi);
+    if (timeMatch && timeMatch.length >= 1) {
+      // If we found at least one time, try to make a decision
+      const hasDays = DAYS.some(d => normalized.includes(d));
+      if (hasDays) {
+        const foundDays: string[] = [];
+        DAYS.forEach(d => {
+          if (normalized.includes(d)) foundDays.push(d);
+        });
+        const isToday = foundDays.includes(day);
+        if (isToday) {
+          return { status: 'not_ok', reason: `Parking restriction active today (${foundDays.join(', ')}) - check sign for time details` };
+        }
+        return { status: 'ok', reason: `No restriction today (restriction applies ${foundDays.join(', ')})` };
+      }
+      return { status: 'not_ok', reason: 'Parking restriction active - check sign for time and day details' };
+    }
+    return { status: 'not_ok', reason: 'Parking restriction indicated - please review sign carefully' };
   }
 
   return { status: 'uncertain', reason: 'Could not parse rules from sign text. OCR text: "' + normalized.substring(0, 100) + '"' };
