@@ -61,8 +61,8 @@ Simple one-rule signs like the fixtures in `can-i-park/test-fixtures/` parse cor
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/bariaga1/test_code.git
-cd can-i-park
+git clone https://github.com/bariaga1/can-i-park-here.git
+cd can-i-park-here/can-i-park
 ```
 
 2. Install dependencies:
