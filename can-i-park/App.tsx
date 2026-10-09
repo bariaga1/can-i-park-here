@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TouchableOpacity, Image, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Image, ActivityIndicator, ScrollView, Alert, Linking } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef, useState } from 'react';
 import { runOcrOnUri } from './src/ocr';
@@ -16,25 +16,6 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
-
-  if (!permission) {
-    return (
-      <View style={styles.center}>
-        <Text>Checking camera permissions…</Text>
-      </View>
-    );
-  }
-
-  if (!permission.granted) {
-    return (
-      <View style={styles.center}>
-        <Text>We need your permission to show the camera</Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Grant permission</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
 
   const takePhoto = async () => {
     try {
@@ -72,8 +53,28 @@ export default function App() {
     setShowCamera(false);
   };
 
-  const startCamera = () => {
-    setShowCamera(true);
+  const startCamera = async () => {
+    if (permission?.granted) {
+      setShowCamera(true);
+      return;
+    }
+
+    if (permission && !permission.canAskAgain) {
+      Alert.alert(
+        'Camera access needed',
+        'Camera access is turned off for this app. Enable it in Settings to scan signs, or import a photo instead.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return;
+    }
+
+    const result = await requestPermission();
+    if (result.granted) {
+      setShowCamera(true);
+    }
   };
 
   const importFromPhotos = async () => {
@@ -230,13 +231,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'stretch',
     justifyContent: 'flex-start',
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    padding: 20,
   },
   cameraContainer: {
     flex: 1,
