@@ -96,7 +96,7 @@ npx expo start --lan
 ```
 3. Scan the QR code in Expo Go, or open `exp://<your-lan-ip>:8081`
 
-The first screen still asks for camera permission, even if you only want to import a photo. After that, the home menu lets you choose camera vs library.
+The app opens on the home menu. Camera permission is requested only when you tap Take a Photo, and photo library permission only when you tap Import Photo. If camera access was previously denied, the app offers a shortcut to Settings.
 
 ## Project Structure
 
@@ -168,7 +168,6 @@ The transcribed text is saved next to the photo. The current parser latches onto
 - [ ] History of past scans
 - [ ] Integration with city parking APIs
 - [ ] Manual time picker for planning ahead
-- [ ] Request camera permission only when taking a photo, not on the home menu
 
 ## Contributing
 
