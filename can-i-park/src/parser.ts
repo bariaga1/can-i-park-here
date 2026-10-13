@@ -72,6 +72,12 @@ function parseDays(daysPart: string): string[] {
   return Array.from(result);
 }
 
+// Windows like 10PM-6AM cross midnight, so start is later than end.
+function isWithinWindow(hour: number, start: number, end: number): boolean {
+  if (start <= end) return hour >= start && hour <= end;
+  return hour >= start || hour <= end;
+}
+
 function nowContext() {
   const d = new Date();
   return {
@@ -222,7 +228,7 @@ export function evaluateRulesFromText(text: string): Verdict {
     const end = to24h(endTimeStr);
     
     if (!isNaN(start) && !isNaN(end)) {
-      const within = hour >= start && hour <= end;
+      const within = isWithinWindow(hour, start, end);
       if (within) {
         return { status: 'not_ok', reason: `No parking ${startTimeStr}–${endTimeStr} (always)`, nextSafeStartLocal: humanizeNext(date, end) };
       }
@@ -248,7 +254,7 @@ export function evaluateRulesFromText(text: string): Verdict {
     const days = parseDays(daysPart);
     if (days.length === 0) {
       // If we couldn't parse any days, treat it as always applies
-      const within = hour >= start && hour <= end;
+      const within = isWithinWindow(hour, start, end);
       if (within) {
         return { status: 'not_ok', reason: `No parking ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
       }
@@ -256,7 +262,7 @@ export function evaluateRulesFromText(text: string): Verdict {
     }
     
     const isToday = days.includes(day);
-    const within = hour >= start && hour <= end;
+    const within = isWithinWindow(hour, start, end);
     if (isToday && within) {
       const next = humanizeNext(date, end);
       return { status: 'not_ok', reason: `No parking ${days.join(', ')} ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: next };
@@ -280,7 +286,7 @@ export function evaluateRulesFromText(text: string): Verdict {
       return { status: 'uncertain', reason: 'Could not parse time-limited parking time format' };
     }
     
-    const within = hour >= start && hour <= end;
+    const within = isWithinWindow(hour, start, end);
     if (within) {
       return { status: 'ok', reason: `Limited to ${twoHr[1]} hour(s) now (${startTimeStr}–${endTimeStr})`, nextSafeStartLocal: endTimeStr };
     }
@@ -301,7 +307,7 @@ export function evaluateRulesFromText(text: string): Verdict {
     }
     
     const applies = scDay === day;
-    const within = hour >= start && hour <= end;
+    const within = isWithinWindow(hour, start, end);
     if (applies && within) {
       return { status: 'not_ok', reason: `Street cleaning ${scDay} ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
     }
@@ -342,7 +348,7 @@ export function evaluateRulesFromText(text: string): Verdict {
     
     const days = parseDays(daysPart);
     const isToday = days.includes(day);
-    const within = hour >= start && hour <= end;
+    const within = isWithinWindow(hour, start, end);
     
     if (isToday && within) {
       if (exception && exception.includes('PERMIT')) {
@@ -363,7 +369,7 @@ export function evaluateRulesFromText(text: string): Verdict {
       const end = to24h(endTimeStr);
       
       if (!isNaN(start) && !isNaN(end)) {
-        const within = hour >= start && hour <= end;
+        const within = isWithinWindow(hour, start, end);
         if (within) {
           return { status: 'not_ok', reason: `Loading zone active ${startTimeStr}–${endTimeStr} - commercial vehicles only` };
         }
@@ -429,13 +435,13 @@ export function evaluateRulesFromText(text: string): Verdict {
       if (daysPart) {
         const days = parseDays(daysPart);
         const isToday = days.length > 0 ? days.includes(day) : true;
-        const within = hour >= start && hour <= end;
+        const within = isWithinWindow(hour, start, end);
         if (isToday && within) {
           return { status: 'not_ok', reason: `No standing ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
         }
         return { status: 'ok', reason: `Outside restricted hours (${startTimeStr}–${endTimeStr})` };
       }
-      const within = hour >= start && hour <= end;
+      const within = isWithinWindow(hour, start, end);
       if (within) {
         return { status: 'not_ok', reason: `No standing ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
       }
@@ -456,7 +462,7 @@ export function evaluateRulesFromText(text: string): Verdict {
       const days = parseDays(daysPart);
       if (days.length > 0) {
         const isToday = days.includes(day);
-        const within = hour >= start && hour <= end;
+        const within = isWithinWindow(hour, start, end);
         if (isToday && within) {
           return { status: 'not_ok', reason: `Parking restriction ${days.join(', ')} ${startTimeStr}–${endTimeStr}`, nextSafeStartLocal: humanizeNext(date, end) };
         }
@@ -474,7 +480,7 @@ export function evaluateRulesFromText(text: string): Verdict {
       const start = to24h(timeRange[1].trim());
       const end = to24h(timeRange[2].trim());
       if (!isNaN(start) && !isNaN(end)) {
-        const within = hour >= start && hour <= end;
+        const within = isWithinWindow(hour, start, end);
         if (within) {
           return { status: 'not_ok', reason: `Parking prohibited ${timeRange[1]}–${timeRange[2]}`, nextSafeStartLocal: humanizeNext(date, end) };
         }
@@ -492,7 +498,7 @@ export function evaluateRulesFromText(text: string): Verdict {
     const start = to24h(startTimeStr);
     const end = to24h(endTimeStr);
     if (!isNaN(start) && !isNaN(end)) {
-      const within = hour >= start && hour <= end;
+      const within = isWithinWindow(hour, start, end);
       if (within) {
         return { status: 'ok', reason: `Metered parking active (${startTimeStr}–${endTimeStr}) - payment required`, nextSafeStartLocal: endTimeStr };
       }
@@ -514,7 +520,7 @@ export function evaluateRulesFromText(text: string): Verdict {
       const days = parseDays(daysPart);
       if (days.length > 0) {
         const isToday = days.includes(day);
-        const within = hour >= start && hour <= end;
+        const within = isWithinWindow(hour, start, end);
         const isNoParking = /NO.*PARK/i.test(normalized);
         
         if (isNoParking || normalized.includes('PROHIBITED') || normalized.includes('FORBIDDEN')) {
@@ -541,7 +547,7 @@ export function evaluateRulesFromText(text: string): Verdict {
     const end = to24h(endTimeStr);
     
     if (!isNaN(start) && !isNaN(end)) {
-      const within = hour >= start && hour <= end;
+      const within = isWithinWindow(hour, start, end);
       // Check if any day abbreviation appears in the text
       const hasDays = DAYS.some(d => normalized.includes(d));
       
@@ -623,6 +629,7 @@ function humanizeNext(now: Date, nextHourFloat: number): string {
   const m = Math.round((nextHourFloat - h) * 60);
   const d = new Date(now);
   d.setHours(h, m, 0, 0);
+  if (d <= now) d.setDate(d.getDate() + 1);
   const sameDay = d.getDate() === now.getDate();
   return `${formatTime(d)} ${sameDay ? 'today' : 'tomorrow'}`;
 }
