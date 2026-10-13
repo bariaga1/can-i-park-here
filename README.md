@@ -21,6 +21,7 @@ This app uses OCR (Optical Character Recognition) to extract text from parking s
 
 #### Basic Patterns
 - No parking with time windows (e.g., "NO PARKING MON & THU 9AM-11AM")
+- Overnight windows that cross midnight (e.g., "NO PARKING 10PM-6AM")
 - Street cleaning schedules (e.g., "STREET CLEANING MON 9AM-11AM")
 - 2-hour parking limits with time restrictions
 
