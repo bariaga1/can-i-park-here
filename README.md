@@ -108,7 +108,8 @@ can-i-park/
 ├── src/
 │   ├── types.ts         # TypeScript type definitions
 │   ├── ocr.ts           # OCR integration (OCR.space API)
-│   └── parser.ts        # Parking rule parser logic
+│   ├── parser.ts        # Parking rule parser logic
+│   └── parser.test.ts   # Jest unit tests for the parser
 ├── test-fixtures/       # Simple mock signs plus real photo fixtures
 │   ├── run-simple-sign-ocr.ts
 │   └── real/            # Real-world signs (stacked / multi-clause)
@@ -124,6 +125,18 @@ can-i-park/
 5. **Verdict Display** - Shows clear status with reasoning and next safe time
 
 ## Testing
+
+### Unit tests
+
+Parser unit tests use Jest with the `jest-expo` preset and live next to the code they test (`src/parser.test.ts`). They freeze the clock with Jest fake timers, so results don't depend on when you run them, and they don't call the OCR API.
+
+```bash
+cd can-i-park
+npm test             # run once
+npm run test:watch   # rerun on save
+```
+
+### Manual testing
 
 The app includes debug features to help with testing:
 - View raw OCR text to verify extraction accuracy
