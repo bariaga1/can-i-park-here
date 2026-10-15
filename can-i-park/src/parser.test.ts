@@ -9,6 +9,7 @@ function at(day: number, hour: number, minute = 0) {
 const SUN = 11;
 const MON = 12;
 const TUE = 13;
+const WED = 14;
 const SAT = 17;
 
 beforeEach(() => {
@@ -49,6 +50,28 @@ describe('no parking with days and a time window', () => {
   it('handles a day range plus an extra day', () => {
     at(SAT, 11);
     expect(evaluateRulesFromText('NO PARKING MON-FRI & SAT 10AM-2PM').status).toBe('not_ok');
+  });
+
+  it('treats the listed end time as the first safe time', () => {
+    at(TUE, 18);
+    expect(evaluateRulesFromText(sign).status).toBe('ok');
+  });
+
+  it('treats the listed start time as restricted', () => {
+    at(TUE, 8);
+    expect(evaluateRulesFromText(sign).status).toBe('not_ok');
+  });
+
+  it('parses 12 AM and 12 PM correctly', () => {
+    at(TUE, 0);
+    expect(evaluateRulesFromText('NO PARKING 12AM-6AM').status).toBe('not_ok');
+    at(TUE, 12);
+    expect(evaluateRulesFromText('NO PARKING 12PM-2PM').status).toBe('not_ok');
+  });
+
+  it('handles OCR line breaks and extra whitespace', () => {
+    at(TUE, 9);
+    expect(evaluateRulesFromText('NO PARKING\n MON-FRI   8AM - 6PM').status).toBe('not_ok');
   });
 });
 
@@ -119,6 +142,18 @@ describe('signs with no time window', () => {
   });
 });
 
+describe('tow away and unclear signs', () => {
+  it('blocks parking in a tow away zone', () => {
+    at(TUE, 12);
+    expect(evaluateRulesFromText('TOW AWAY ZONE MON-FRI').status).toBe('not_ok');
+  });
+
+  it('returns uncertain for unrelated text', () => {
+    at(TUE, 12);
+    expect(evaluateRulesFromText('WELCOME TO MAIN STREET').status).toBe('uncertain');
+  });
+});
+
 describe('time-limited and loading zones', () => {
   it('allows parking at a 2-hour sign during its hours', () => {
     at(TUE, 9);
@@ -128,5 +163,24 @@ describe('time-limited and loading zones', () => {
   it('blocks parking in a loading zone during its hours', () => {
     at(TUE, 8);
     expect(evaluateRulesFromText('LOADING ZONE 7AM-10AM').status).toBe('not_ok');
+  });
+});
+
+describe('stacked plaques (documented parser gap)', () => {
+  // Tuesday at 3pm: first clause has ended, but the commercial meter clause is active.
+  const stackedSign = [
+    'NO STANDING MON-FRI 7AM-10AM',
+    '3 HOUR COMMERCIAL METERED PARKING MON-FRI 10AM-2PM OTHERS NO STANDING',
+    '1 HOUR METERED PARKING SAT 9AM-7PM',
+  ].join('\n');
+
+  it.failing('does not say parking is allowed when a later plaque has an active restriction', () => {
+    at(TUE, 15);
+    expect(evaluateRulesFromText(stackedSign).status).toBe('not_ok');
+  });
+
+  it.failing('recognizes a parking window from a later plaque on Saturday', () => {
+    at(SAT, 11);
+    expect(evaluateRulesFromText(stackedSign).reason).toMatch(/Metered parking active/i);
   });
 });
