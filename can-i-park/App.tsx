@@ -16,6 +16,31 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [evaluationDate, setEvaluationDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState(new Date().getDay());
+  const [selectedHour, setSelectedHour] = useState(new Date().getHours());
+  const [selectedMinute, setSelectedMinute] = useState(Math.floor(new Date().getMinutes() / 15) * 15);
+
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  const checkSelectedTime = () => {
+    if (!debugInfo) return;
+    const selected = new Date();
+    const dayOffset = (selectedDay - selected.getDay() + 7) % 7;
+    selected.setDate(selected.getDate() + dayOffset);
+    selected.setHours(selectedHour, selectedMinute, 0, 0);
+    setEvaluationDate(selected);
+    setVerdict(evaluateRulesFromText(debugInfo.ocrText, selected));
+  };
+
+  const adjustSelection = (unit: 'hour' | 'minute', amount: number) => {
+    const totalMinutes = selectedHour * 60 + selectedMinute + (unit === 'hour' ? amount * 60 : amount);
+    const dayChange = Math.floor(totalMinutes / (24 * 60));
+    const normalized = (totalMinutes + 24 * 60) % (24 * 60);
+    setSelectedHour(Math.floor(normalized / 60));
+    setSelectedMinute(normalized % 60);
+    if (dayChange !== 0) setSelectedDay((selectedDay + dayChange + 7) % 7);
+  };
 
   const takePhoto = async () => {
     try {
@@ -33,6 +58,11 @@ export default function App() {
         setDebugInfo({ ocrText: ocr.text, confidence: ocr.confidence || 0 });
         console.log('App: Evaluating rules from text:', ocr.text);
         const result = evaluateRulesFromText(ocr.text);
+        const now = new Date();
+        setSelectedDay(now.getDay());
+        setSelectedHour(now.getHours());
+        setSelectedMinute(Math.floor(now.getMinutes() / 15) * 15);
+        setEvaluationDate(now);
         console.log('App: Parser result:', result);
         setVerdict(result);
         setIsProcessing(false);
@@ -94,6 +124,11 @@ export default function App() {
       setDebugInfo({ ocrText: ocr.text, confidence: ocr.confidence || 0 });
       console.log('App: Evaluating rules from text:', ocr.text || '');
       const res = evaluateRulesFromText(ocr.text || '');
+      const now = new Date();
+      setSelectedDay(now.getDay());
+      setSelectedHour(now.getHours());
+      setSelectedMinute(Math.floor(now.getMinutes() / 15) * 15);
+      setEvaluationDate(now);
       console.log('App: Parser result:', res);
       setVerdict(res);
       setIsProcessing(false);
@@ -183,6 +218,37 @@ export default function App() {
                   <Text style={styles.next}>{verdict.nextSafeStartLocal}</Text>
                 </View>
               )}
+              <View style={styles.infoCard}>
+                <Text style={styles.infoLabel}>Check another time</Text>
+                <View style={styles.pickerRow}>
+                  <TouchableOpacity style={styles.pickerButton} onPress={() => setSelectedDay((selectedDay + 6) % 7)}>
+                    <Text style={styles.pickerButtonText}>‹</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.pickerValue}>{dayNames[selectedDay]}</Text>
+                  <TouchableOpacity style={styles.pickerButton} onPress={() => setSelectedDay((selectedDay + 1) % 7)}>
+                    <Text style={styles.pickerButtonText}>›</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.pickerRow}>
+                  <TouchableOpacity style={styles.pickerButton} onPress={() => adjustSelection('hour', -1)}>
+                    <Text style={styles.pickerButtonText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.pickerValue}>{`${(selectedHour % 12) || 12}:${String(selectedMinute).padStart(2, '0')} ${selectedHour >= 12 ? 'PM' : 'AM'}`}</Text>
+                  <TouchableOpacity style={styles.pickerButton} onPress={() => adjustSelection('hour', 1)}>
+                    <Text style={styles.pickerButtonText}>+</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.pickerButton} onPress={() => adjustSelection('minute', -15)}>
+                    <Text style={styles.pickerButtonText}>−15</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.pickerButton} onPress={() => adjustSelection('minute', 15)}>
+                    <Text style={styles.pickerButtonText}>+15</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={styles.checkTimeButton} onPress={checkSelectedTime}>
+                  <Text style={styles.buttonText}>Check time</Text>
+                </TouchableOpacity>
+                <Text style={styles.selectedTimeHint}>Showing result for {dayNames[evaluationDate.getDay()]} at {`${(evaluationDate.getHours() % 12) || 12}:${String(evaluationDate.getMinutes()).padStart(2, '0')} ${evaluationDate.getHours() >= 12 ? 'PM' : 'AM'}`}</Text>
+              </View>
             </View>
           )}
           
@@ -433,6 +499,47 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderLeftWidth: 4,
     borderLeftColor: '#e5e7eb',
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  pickerButton: {
+    minWidth: 42,
+    minHeight: 40,
+    borderRadius: 8,
+    backgroundColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  pickerButtonText: {
+    color: '#111827',
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  pickerValue: {
+    minWidth: 90,
+    textAlign: 'center',
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  checkTimeButton: {
+    marginTop: 12,
+    borderRadius: 8,
+    backgroundColor: '#111827',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  selectedTimeHint: {
+    marginTop: 8,
+    textAlign: 'center',
+    color: '#6b7280',
+    fontSize: 12,
   },
   infoLabel: {
     fontSize: 12,

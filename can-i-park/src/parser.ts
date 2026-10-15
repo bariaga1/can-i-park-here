@@ -78,8 +78,7 @@ function isWithinWindow(hour: number, start: number, end: number): boolean {
   return hour >= start || hour <= end;
 }
 
-function nowContext() {
-  const d = new Date();
+function nowContext(d: Date) {
   return {
     day: DAYS[d.getDay()],
     hour: d.getHours() + d.getMinutes() / 60,
@@ -195,7 +194,7 @@ function filterParkingRelevantText(text: string): string {
   return relevantWords.length > 0 ? relevantWords.join(' ') : text;
 }
 
-export function evaluateRulesFromText(text: string): Verdict {
+export function evaluateRulesFromText(text: string, evaluationDate: Date = new Date()): Verdict {
   // First, filter out irrelevant text
   const filteredText = filterParkingRelevantText(text);
   
@@ -217,7 +216,7 @@ export function evaluateRulesFromText(text: string): Verdict {
     })
     .trim();
   
-  const { day, hour, date } = nowContext();
+  const { day, hour, date } = nowContext(evaluationDate);
 
   // Handle NO PARKING without days (applies always): "NO PARKING 9AM-11AM"
   const noParkingAlwaysMatch = normalized.match(/NO\s*PARKING\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))(?:\s|$)/i);
