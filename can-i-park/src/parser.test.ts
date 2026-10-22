@@ -166,21 +166,37 @@ describe('time-limited and loading zones', () => {
   });
 });
 
-describe('stacked plaques (documented parser gap)', () => {
-  // Tuesday at 3pm: first clause has ended, but the commercial meter clause is active.
+describe('stacked plaques', () => {
   const stackedSign = [
     'NO STANDING MON-FRI 7AM-10AM',
     '3 HOUR COMMERCIAL METERED PARKING MON-FRI 10AM-2PM OTHERS NO STANDING',
     '1 HOUR METERED PARKING SAT 9AM-7PM',
   ].join('\n');
 
-  it.failing('does not say parking is allowed when a later plaque has an active restriction', () => {
+  it('does not say parking is allowed when a later plaque restricts non-commercial vehicles', () => {
     at(TUE, 15);
     expect(evaluateRulesFromText(stackedSign).status).toBe('not_ok');
   });
 
-  it.failing('recognizes a parking window from a later plaque on Saturday', () => {
+  it('recognizes a parking window from a later plaque on Saturday', () => {
     at(SAT, 11);
     expect(evaluateRulesFromText(stackedSign).reason).toMatch(/Metered parking active/i);
+  });
+
+  it('evaluates multi-window no standing on a single plaque', () => {
+    at(TUE, 15);
+    expect(
+      evaluateRulesFromText('NO STANDING MON-FRI 7AM-10AM 2PM-7PM').status,
+    ).toBe('not_ok');
+  });
+
+  it('handles real stacked-sign transcription (Tuesday afternoon)', () => {
+    const realPole = [
+      'NO STANDING MON-FRI 7AM-10AM 2PM-7PM',
+      '3 HOUR COMMERCIAL METERED PARKING MON-FRI 10AM-2PM OTHERS NO STANDING',
+      '1 HOUR METERED PARKING SAT 9AM-7PM',
+    ].join('\n');
+    at(TUE, 15);
+    expect(evaluateRulesFromText(realPole).status).toBe('not_ok');
   });
 });

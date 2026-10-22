@@ -34,7 +34,7 @@ This app uses OCR (Optical Character Recognition) to extract text from parking s
 - **Handicap/Accessible** - Special permit requirements
 - **Fire Zones/Hydrants** - Emergency access restrictions
 
-Simple one-rule signs like the fixtures in `can-i-park/test-fixtures/` parse correctly. Multi-clause and stacked plaques (several rules on one pole) are **not** handled yet: the parser often returns after the first matching time window.
+Simple one-rule signs like the fixtures in `can-i-park/test-fixtures/` parse correctly. **Stacked plaques** (several rules on one pole) are split into clauses, each evaluated independently, and the **strictest** verdict wins (`not_ok` over `ok`). Assumes a non-commercial driver without special permits unless noted.
 
 ### Debug Features
 - Raw OCR text display
@@ -164,24 +164,44 @@ Import the PNGs in Expo Go to confirm the on-device badge matches.
 - 3-hour commercial metered parking Mon–Fri 10am–2pm (others no standing)
 - 1-hour metered parking Saturday 9am–7pm
 
-The transcribed text is saved next to the photo. The current parser latches onto the first time window (`7AM–10AM`) and ignores the rest, so a Tuesday 3pm scan would incorrectly look allowed.
+The transcribed text is saved next to the photo. The parser evaluates each plaque and merges results (e.g. Tuesday 3pm should be **Do Not Park** when no-standing or commercial-only rules apply).
 
 ### Test Cases to Try
 - Simple time-based restrictions (the mock fixtures above)
 - Permit zones with exceptions
-- Stacked / multi-clause signs (known gap)
+- Stacked / multi-clause signs (see `can-i-park/test-fixtures/real/`)
 - Blurry or poorly lit photos
 - Different sign formats and fonts
 
 ## Future Enhancements
 
-- [ ] Split long OCR dumps into clauses and evaluate all of them (strictest rule wins)
-- [ ] Support for multiple stacked signs / plaques in one photo
+- [x] Split long OCR dumps into clauses and evaluate all of them (strictest rule wins)
+- [ ] Richer clause splitting for messy OCR (full weekday names, broken line order)
 - [ ] On-device OCR (ML Kit) for privacy and speed
 - [ ] Location-based rule memory
 - [ ] History of past scans
 - [ ] Integration with city parking APIs
 - [ ] Manual time picker for planning ahead
+
+## Development Notes
+
+### Current work: manual time check
+
+Branch: `feature/manual-time-check`  
+Commit: `268d236` (`Add manual parking time check`)
+
+- Added day and time controls to the scan results so a sign can be checked for another time.
+- The parser accepts an optional evaluation date; scans still use the current local time by default.
+- Added `TEST_PLAN.md` with planned parser cases and agreed assumptions: a restriction ends at its posted time, and tests assume the driver lacks required permits or vehicle qualifications.
+- Added parser tests for time boundaries, OCR whitespace, tow-away zones, uncertain input, and the stacked-sign fixture.
+- TypeScript check passed. The Jest suite still has one failing test: the parser treats the exact end time as restricted, contrary to the agreed behavior. Stacked-sign cases remain documented as expected failures.
+
+Next steps:
+
+1. Fix time-window boundary evaluation so the posted end time is safe, and make the relevant test pass.
+2. Continue implementing the cases in `TEST_PLAN.md`, starting with day parsing and overnight schedules.
+3. Improve evaluation of stacked and multi-clause signs using the real fixture under `can-i-park/test-fixtures/real/`.
+4. Open a pull request from `feature/manual-time-check` to `main` (GitHub CLI authentication needs to be restored first).
 
 ## Contributing
 

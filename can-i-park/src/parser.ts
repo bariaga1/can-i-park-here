@@ -1,3 +1,4 @@
+import { mergeVerdicts, splitIntoClauses } from './clauses';
 import type { Verdict } from './types';
 
 const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'] as const;
@@ -74,8 +75,9 @@ function parseDays(daysPart: string): string[] {
 
 // Windows like 10PM-6AM cross midnight, so start is later than end.
 function isWithinWindow(hour: number, start: number, end: number): boolean {
-  if (start <= end) return hour >= start && hour <= end;
-  return hour >= start || hour <= end;
+  // End time is the first safe moment (exclusive end).
+  if (start <= end) return hour >= start && hour < end;
+  return hour >= start || hour < end;
 }
 
 function nowContext(d: Date) {
@@ -166,9 +168,9 @@ function filterParkingRelevantText(text: string): string {
     }
   }
   
-  // If we found relevant lines, join them; otherwise return original
+  // Preserve line breaks between kept lines so stacked plaques stay separable.
   if (relevantLines.length > 0) {
-    return relevantLines.join(' ');
+    return relevantLines.join('\n');
   }
   
   // Fallback: extract just the parking-related patterns from the whole text
@@ -194,12 +196,8 @@ function filterParkingRelevantText(text: string): string {
   return relevantWords.length > 0 ? relevantWords.join(' ') : text;
 }
 
-export function evaluateRulesFromText(text: string, evaluationDate: Date = new Date()): Verdict {
-  // First, filter out irrelevant text
-  const filteredText = filterParkingRelevantText(text);
-  
-  // Better normalization for OCR: handle line breaks, extra spaces, common OCR errors
-  let normalized = filteredText.toUpperCase()
+function normalizeSignText(filteredText: string): string {
+  return filteredText.toUpperCase()
     .replace(/\r\n/g, ' ')      // Windows line breaks
     .replace(/\n/g, ' ')        // Unix line breaks
     .replace(/\r/g, ' ')        // Mac line breaks
@@ -215,8 +213,106 @@ export function evaluateRulesFromText(text: string, evaluationDate: Date = new D
       return m;
     })
     .trim();
-  
+}
+
+export function evaluateRulesFromText(text: string, evaluationDate: Date = new Date()): Verdict {
+  const clauses = splitIntoClauses(text);
+  const verdicts = clauses.map((clause) => {
+    const filtered = filterParkingRelevantText(clause);
+    const normalized = normalizeSignText(filtered);
+    return evaluateSingleClause(normalized, evaluationDate);
+  });
+  return mergeVerdicts(verdicts);
+}
+
+function evaluateSingleClause(normalized: string, evaluationDate: Date): Verdict {
   const { day, hour, date } = nowContext(evaluationDate);
+
+  // Commercial metered parking with "others no standing" (non-commercial driver assumed).
+  const commercialOthers = normalized.match(
+    /(?:\d+\s*(?:HOUR|HR)\s+)?COMMERCIAL\s+METERED\s+PARKING\s+([A-Z\s,&\-]+?)\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM)).*?OTHERS\s+NO\s+STANDING/i,
+  );
+  if (commercialOthers) {
+    const daysPart = commercialOthers[1].trim();
+    const startTimeStr = commercialOthers[2].trim();
+    const endTimeStr = commercialOthers[3].trim();
+    const start = to24h(startTimeStr);
+    const end = to24h(endTimeStr);
+    const days = parseDays(daysPart);
+    const isToday = days.length === 0 || days.includes(day);
+    if (isToday && !isNaN(start) && !isNaN(end)) {
+      const withinMeter = isWithinWindow(hour, start, end);
+      if (withinMeter) {
+        return {
+          status: 'not_ok',
+          reason: `Commercial metered parking only ${startTimeStr}–${endTimeStr} — no standing for other vehicles`,
+          nextSafeStartLocal: humanizeNext(date, end),
+        };
+      }
+      return {
+        status: 'not_ok',
+        reason: `No standing for non-commercial vehicles on ${days.length ? days.join(', ') : 'listed days'}`,
+      };
+    }
+  }
+
+  // e.g. "1 HOUR METERED PARKING SAT 9AM-7PM"
+  const hourMetered = normalized.match(
+    /(\d+)\s*(?:HOUR|HR)\s+METERED\s+PARKING\s+([A-Z\s,&\-]+?)\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i,
+  );
+  if (hourMetered) {
+    const startTimeStr = hourMetered[3].trim();
+    const endTimeStr = hourMetered[4].trim();
+    const daysPart = hourMetered[2].trim();
+    const start = to24h(startTimeStr);
+    const end = to24h(endTimeStr);
+    const days = parseDays(daysPart);
+    const isToday = days.length === 0 || days.includes(day);
+    if (!isNaN(start) && !isNaN(end) && isToday && isWithinWindow(hour, start, end)) {
+      return {
+        status: 'ok',
+        reason: `Metered parking active (${startTimeStr}–${endTimeStr}) - payment required`,
+        nextSafeStartLocal: endTimeStr,
+      };
+    }
+    if (isToday) {
+      return { status: 'ok', reason: 'Outside metered hours' };
+    }
+    return { status: 'ok', reason: 'Metered parking applies on other days' };
+  }
+
+  // NO STANDING with multiple time windows on one plaque (e.g. 7–10am and 2–7pm).
+  const noStandingMulti = normalized.match(
+    /NO\s*STANDING\s+([A-Z\s,&\-]+?)\s+((?:\d{1,2}(?::\d{2})?\s*(?:AM|PM)\s*[-–—]\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM)\s*)+)/i,
+  );
+  if (noStandingMulti) {
+    const daysPart = noStandingMulti[1].trim();
+    const windowsPart = noStandingMulti[2];
+    const days = parseDays(daysPart);
+    const isToday = days.length === 0 || days.includes(day);
+    const windowRe = /(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/gi;
+    let match: RegExpExecArray | null;
+    while ((match = windowRe.exec(windowsPart)) !== null) {
+      const startTimeStr = match[1].trim();
+      const endTimeStr = match[2].trim();
+      const start = to24h(startTimeStr);
+      const end = to24h(endTimeStr);
+      if (!isNaN(start) && !isNaN(end) && isToday && isWithinWindow(hour, start, end)) {
+        return {
+          status: 'not_ok',
+          reason: `No standing ${days.length ? days.join(', ') : 'today'} ${startTimeStr}–${endTimeStr}`,
+          nextSafeStartLocal: humanizeNext(date, end),
+        };
+      }
+    }
+    if (isToday) {
+      return {
+        status: 'ok',
+        reason: `Outside no-standing hours today`,
+      };
+    }
+    return { status: 'ok', reason: 'No standing applies on other days' };
+  }
 
   // Handle NO PARKING without days (applies always): "NO PARKING 9AM-11AM"
   const noParkingAlwaysMatch = normalized.match(/NO\s*PARKING\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))(?:\s|$)/i);
