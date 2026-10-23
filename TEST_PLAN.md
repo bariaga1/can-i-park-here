@@ -51,7 +51,7 @@ Use the real three-plaque fixture documented in the README and its transcription
 - When a clause allows parking only for a permit or qualifying vehicle, apply the driver assumptions above.
 - Include a case where two clauses overlap to establish that the more restrictive rule controls.
 
-These cases are expected to expose a known parser limitation until multi-clause evaluation is implemented.
+Implemented in `can-i-park/src/clauses.ts` and `evaluateRulesFromText` (see stacked plaque tests in `parser.test.ts`). Driver is assumed non-commercial without permits unless a test states otherwise.
 
 ## Implementation order
 
